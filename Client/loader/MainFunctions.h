@@ -21,7 +21,6 @@ void HandleNotUsedMainMenu();
 void ConfigureWerDumpPath();
 void PreLaunchWatchDogs();
 void PostRunWatchDogs(int iReturnCode);
-void HandleIfGTAIsAlreadyRunning();
 void ValidateGTAPath();
 void CheckAntiVirusStatus();
 void CheckDataFiles();

@@ -18,6 +18,7 @@
 #include <fstream>
 #include <array>
 #include <algorithm>
+#include <cstring>
 #include "Userenv.h"  // This will enable SharedUtil::ExpandEnvString
 #define ALLOC_STATS_MODULE_NAME "core"
 #include "SharedUtil.hpp"
@@ -873,6 +874,25 @@ void CCore::ApplyHooks()
     // Remove useless DirectPlay dependency (dpnhpast.dll) @ 0x745701
     // We have to patch here as multiplayer_sa and game_sa are loaded too late
     DetourLibraryFunction("kernel32.dll", "LoadLibraryA", Win32LoadLibraryA, SkipDirectPlay_LoadLibraryA);
+
+    // GTA:SA has process-wide guards that reject a second game instance. They are
+    // patched after the game is loaded so separate MTA clients can run concurrently.
+    {
+        DWORD oldProtect;
+        VirtualProtect(reinterpret_cast<void*>(0x74872D), 9, PAGE_READWRITE, &oldProtect);
+        std::memset(reinterpret_cast<void*>(0x74872D), 0x90, 9);
+        VirtualProtect(reinterpret_cast<void*>(0x74872D), 9, oldProtect, &oldProtect);
+    }
+
+    // CdStreamInitThread creates a named semaphore, which would otherwise be
+    // shared by all GTA instances and prevent the second client from loading.
+    {
+        DWORD oldProtect;
+        VirtualProtect(reinterpret_cast<void*>(0x406945), 5, PAGE_READWRITE, &oldProtect);
+        const unsigned char patch[] = {0x6A, 0x00, 0x90, 0x90, 0x90};
+        std::memcpy(reinterpret_cast<void*>(0x406945), patch, sizeof(patch));
+        VirtualProtect(reinterpret_cast<void*>(0x406945), 5, oldProtect, &oldProtect);
+    }
 }
 
 bool UsingAltD3DSetup()

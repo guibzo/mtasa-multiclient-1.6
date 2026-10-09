@@ -283,8 +283,7 @@ MTAEXPORT int DoWinMain(HINSTANCE hLauncherInstance, MAYBE_UNUSED HINSTANCE hPre
     BsodDetectionPreLaunch();
     MaybeShowCopySettingsDialog();
 
-    // Make sure GTA is not running
-    HandleIfGTAIsAlreadyRunning();
+    // Multiple clients are supported, so an existing GTA process is not a blocker.
 
     // Maybe warn user if no anti-virus running
     CheckAntiVirusStatus();

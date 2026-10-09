@@ -31,7 +31,6 @@ namespace fs = std::filesystem;
 
 static SString g_strMTASAPath;
 static SString g_strGTAPath;
-static HANDLE  g_hMutex = NULL;
 static HMODULE hLibraryModule = NULL;
 HINSTANCE      g_hInstance = NULL;
 
@@ -312,18 +311,6 @@ std::vector<DWORD> GetGTAProcessList()
         ListAddUnique(result, processId);
 
     return result;
-}
-
-///////////////////////////////////////////////////////////////////////////
-//
-// IsGTARunning
-//
-//
-//
-///////////////////////////////////////////////////////////////////////////
-bool IsGTARunning()
-{
-    return !GetGTAProcessList().empty();
 }
 
 ///////////////////////////////////////////////////////////////////////////
@@ -1256,7 +1243,6 @@ void RelaunchAsAdmin(const SString& strCmdLine, const SString& strReason)
     AddReportLog(7115, SString("Loader - Request to elevate privileges (%s)", *strReason));
     MessageBoxUTF8(NULL, SString(_("MTA:SA needs Administrator access for the following task:\n\n  '%s'\n\nPlease confirm in the next window."), *strReason),
                    "Multi Theft Auto: San Andreas", MB_OK | MB_ICONINFORMATION | MB_TOPMOST);
-    ReleaseSingleInstanceMutex();
     ShellExecuteNonBlocking("runas", PathJoin(GetMTASAPath(), MTA_EXE_NAME), strCmdLine);
 }
 
@@ -1527,42 +1513,6 @@ bool TerminateProcess(DWORD dwProcessID, uint uiExitCode)
     }
 
     return success;
-}
-
-///////////////////////////////////////////////////////////////////////////
-//
-// CreateSingleInstanceMutex
-//
-//
-//
-///////////////////////////////////////////////////////////////////////////
-bool CreateSingleInstanceMutex()
-{
-    HANDLE hMutex = CreateMutex(NULL, FALSE, TEXT(MTA_GUID));
-
-    if (GetLastError() == ERROR_ALREADY_EXISTS)
-    {
-        if (hMutex)
-            CloseHandle(hMutex);
-        return false;
-    }
-    assert(!g_hMutex);
-    g_hMutex = hMutex;
-    return true;
-}
-
-///////////////////////////////////////////////////////////////////////////
-//
-// ReleaseSingleInstanceMutex
-//
-//
-//
-///////////////////////////////////////////////////////////////////////////
-void ReleaseSingleInstanceMutex()
-{
-    // assert(g_hMutex);
-    CloseHandle(g_hMutex);
-    g_hMutex = NULL;
 }
 
 ///////////////////////////////////////////////////////////////////////////

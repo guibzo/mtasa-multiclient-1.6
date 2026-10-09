@@ -915,10 +915,7 @@ void ConfigureWerDumpPath()
 //////////////////////////////////////////////////////////
 void PreLaunchWatchDogs()
 {
-    // Note: Single instance mutex is properly checked later in the launch sequence
-    // Creating it here just ensures we acquire it early, but we shouldn't assert
-    // because after a crash the mutex won't exist (OS releases it)
-    CreateSingleInstanceMutex();
+    // No single-instance mutex is created here because multiple clients are supported.
 
     // Check for unclean stop on previous run
 #ifndef MTA_DEBUG
@@ -1028,37 +1025,6 @@ void PostRunWatchDogs(int iReturnCode)
 
 //////////////////////////////////////////////////////////
 //
-// HandleIfGTAIsAlreadyRunning
-//
-// Check for and maybe stop a running GTA process
-//
-//////////////////////////////////////////////////////////
-void HandleIfGTAIsAlreadyRunning()
-{
-    if (IsGTARunning())
-    {
-        if (MessageBoxUTF8(
-                0, _("An instance of GTA: San Andreas is already running. It needs to be terminated before MTA:SA can be started. Do you want to do that now?"),
-                _("Information") + _E("CL10"), MB_YESNO | MB_ICONQUESTION | MB_TOPMOST) == IDYES)
-        {
-            TerminateOtherMTAIfRunning();
-            TerminateGTAIfRunning();
-            if (IsGTARunning())
-            {
-                MessageBoxUTF8(0, _("Unable to terminate GTA: San Andreas. If the problem persists, please restart your computer."),
-                               _("Information") + _E("CL11"), MB_OK | MB_ICONERROR | MB_TOPMOST);
-                ExitProcess(EXIT_ERROR);
-            }
-        }
-        else
-        {
-            ExitProcess(EXIT_OK);
-        }
-    }
-}
-
-//////////////////////////////////////////////////////////
-//
 // HandleSpecialLaunchOptions
 //
 // Check and handle commands (from the installer)
@@ -1093,144 +1059,51 @@ void HandleSpecialLaunchOptions()
 //
 // HandleDuplicateLaunching
 //
-// Handle duplicate launching, or running from mtasa:// URI
+// Forward mtasa:// links to an already running client while allowing
+// ordinary launches to create another client instance.
 //
 //////////////////////////////////////////////////////////
 void HandleDuplicateLaunching()
 {
-    LPSTR lpCmdLine = GetCommandLine();
-    if (!lpCmdLine)
-        ExitProcess(EXIT_ERROR);
+    LPWSTR szCommandLine = GetCommandLineW();
+    if (!szCommandLine || !szCommandLine[0])
+        return;
 
-    //  Validate command line length
-    const size_t cmdLineLen = strlen(lpCmdLine);
-    if (cmdLineLen >= 32768)
-        ExitProcess(EXIT_ERROR);  // Max Windows command line length
-
-    bool bIsCrashDialog = (cmdLineLen > 0 && strstr(lpCmdLine, "install_stage=crashed") != NULL);
-    bool bIsDetachedDialog = bIsCrashDialog;
-
-    int recheckTime = 2000;  // 2 seconds recheck time
-
-    // We can only do certain things if MTA is already running
-    // Unless this is a crash dialog launch, which needs to run alongside the crashed instance
-    //
-    // Normal behavior: Loop here if mutex is held, try to pass command line to existing instance
-    // Crash dialog: Skip this entirely (bIsCrashDialog=true), proceed directly to showing dialog
-    while (!bIsDetachedDialog && !CreateSingleInstanceMutex())
-    {
-        if (cmdLineLen > 0)
-        {
-            // Command line args present, so pass it on
-            HWND hwMTAWindow = FindWindow(NULL, "MTA: San Andreas");
+    HWND gameWindow = FindWindowA(nullptr, "MTA: San Andreas");
 #ifdef MTA_DEBUG
-            if (!hwMTAWindow)
-                hwMTAWindow = FindWindow(NULL, "MTA: San Andreas [DEBUG]");
+    if (!gameWindow)
+        gameWindow = FindWindowA(nullptr, "MTA: San Andreas [DEBUG]");
 #endif
 
-            if (hwMTAWindow)
-            {
-                // Parse URI from command line
-                LPWSTR szCommandLine = GetCommandLineW();
-                if (!szCommandLine)
-                    continue;
+    // A URI launch is still delivered to the existing client; only normal launches
+    // are allowed to continue and start an additional client.
+    if (!gameWindow)
+        return;
 
-                int     numArgs = 0;
-                LPWSTR* aCommandLineArgs = CommandLineToArgvW(szCommandLine, &numArgs);
+    int     numArgs = 0;
+    LPWSTR* commandLineArgs = CommandLineToArgvW(szCommandLine, &numArgs);
+    if (!commandLineArgs)
+        return;
 
-                if (aCommandLineArgs && numArgs > 0 && numArgs < 1000)
-                {
-                    for (int i = 1; i < numArgs; ++i)
-                    {
-                        if (!aCommandLineArgs[i])
-                            continue;
-
-                        WString wideArg = aCommandLineArgs[i];
-                        if (wideArg.length() > 8 && wideArg.length() < 2048 &&  // Max MTA connect URI length
-                            WStringX(wideArg).BeginsWith(L"mtasa://"))
-                        {
-                            SString strConnectInfo = ToUTF8(wideArg);
-                            // Check for null bytes and validate content
-                            if (strConnectInfo.find('\0') != SString::npos)
-                                continue;
-
-                            // Additional validation for mtasa:// URI content
-                            if (strConnectInfo.Contains("..") || strConnectInfo.Contains("\\\\"))
-                                continue;
-
-                            COPYDATASTRUCT cdStruct = {URI_CONNECT, static_cast<DWORD>(strConnectInfo.length() + 1), const_cast<char*>(strConnectInfo.c_str())};
-
-                            // Use SendMessageTimeout to prevent hanging
-                            DWORD_PTR dwResult = 0;
-                            SendMessageTimeout(hwMTAWindow, WM_COPYDATA, NULL, reinterpret_cast<LPARAM>(&cdStruct), SMTO_ABORTIFHUNG | SMTO_BLOCK, 5000,
-                                               &dwResult);
-                            break;
-                        }
-                    }
-                    LocalFree(aCommandLineArgs);
-                }
-                ExitProcess(EXIT_ERROR);
-            }
-            else if (recheckTime > 0)
-            {
-                Sleep(500);
-                recheckTime -= 500;
-                continue;
-            }
-            else
-            {
-                const SString strMessage =
-                    _("Trouble restarting MTA:SA\n\n"
-                      "If the problem persists, open Task Manager and\n"
-                      "stop the 'gta_sa.exe' and 'Multi Theft Auto.exe' processes\n\n\n"
-                      "Try to launch MTA:SA again?");
-
-                if (MessageBoxUTF8(0, strMessage, _("Error") + _E("CL04"), MB_ICONWARNING | MB_YESNO | MB_TOPMOST) == IDYES)
-                {
-                    TerminateGTAIfRunning();
-                    TerminateOtherMTAIfRunning();
-
-                    const SString exePath = PathJoin(GetMTASAPath(), MTA_EXE_NAME);
-                    if (FileExists(exePath))
-                    {
-                        ShellExecuteNonBlocking("open", exePath, lpCmdLine);
-                    }
-                }
-                ExitProcess(EXIT_ERROR);
-            }
-        }
-        else
-        {
-            // No command line args, so just bring to front
-            if (!IsGTARunning() && !IsOtherMTARunning())
-            {
-                MessageBoxUTF8(0,
-                               _("Another instance of MTA is already running.\n\n"
-                                 "If this problem persists, please restart your computer"),
-                               _("Error") + _E("CL05"), MB_ICONERROR | MB_TOPMOST);
-            }
-            else if (MessageBoxUTF8(0,
-                                    _("Another instance of MTA is already running.\n\n"
-                                      "Do you want to terminate it?"),
-                                    _("Error") + _E("CL06"), MB_ICONQUESTION | MB_YESNO | MB_TOPMOST) == IDYES)
-            {
-                TerminateGTAIfRunning();
-                TerminateOtherMTAIfRunning();
-
-                const SString exePath = PathJoin(GetMTASAPath(), MTA_EXE_NAME);
-                if (FileExists(exePath))
-                {
-                    ShellExecuteNonBlocking("open", exePath, lpCmdLine);
-                }
-            }
-            ExitProcess(EXIT_ERROR);
-        }
-    }
-
-    if (bIsCrashDialog)
+    for (int i = 1; i < numArgs; ++i)
     {
-        CreateSingleInstanceMutex();
+        WString wideArg = commandLineArgs[i];
+        if (wideArg.length() <= 8 || wideArg.length() >= 2048 || !WStringX(wideArg).BeginsWith(L"mtasa://"))
+            continue;
+
+        SString strConnectInfo = ToUTF8(wideArg);
+        if (strConnectInfo.Contains("..") || strConnectInfo.Contains("\\\\"))
+            continue;
+
+        COPYDATASTRUCT cdStruct = {URI_CONNECT, static_cast<DWORD>(strConnectInfo.length() + 1), const_cast<char*>(strConnectInfo.c_str())};
+
+        DWORD_PTR dwResult = 0;
+        SendMessageTimeout(gameWindow, WM_COPYDATA, NULL, reinterpret_cast<LPARAM>(&cdStruct), SMTO_ABORTIFHUNG | SMTO_BLOCK, 5000, &dwResult);
+        LocalFree(commandLineArgs);
+        ExitProcess(EXIT_ERROR);
     }
+
+    LocalFree(commandLineArgs);
 }
 
 //////////////////////////////////////////////////////////
@@ -1616,7 +1489,6 @@ void CheckDataFiles()
         const SString strMessage(_("Main file has an incorrect name (%s)"), *launchFilename);
         if (MessageBoxUTF8(NULL, strMessage, _("Error") + _E("CL33"), MB_RETRYCANCEL | MB_ICONERROR | MB_TOPMOST) == IDRETRY)
         {
-            ReleaseSingleInstanceMutex();
             const SString correctExePath = PathJoin(strMTASAPath, MTA_EXE_NAME);
             if (FileExists(correctExePath))
             {
@@ -2307,7 +2179,6 @@ int LaunchGame(SString strCmdLine)
         CloseHandle(piLoadee.hProcess);
     }
 
-    ReleaseSingleInstanceMutex();
     return dwExitCode;
 }
 

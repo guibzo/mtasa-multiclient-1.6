@@ -65,7 +65,6 @@ struct SPEFileOffsets
 };
 
 void TerminateGTAIfRunning();
-bool IsGTARunning();
 void TerminateOtherMTAIfRunning();
 bool IsOtherMTARunning();
 
@@ -100,9 +99,6 @@ void RelaunchAsAdmin(const SString& strCmdLine, const SString& strReason);
 void UpdateMTAVersionApplicationSetting(bool bQuiet = false);
 bool Is32bitProcess(DWORD processID);
 bool TerminateProcess(DWORD dwProcessID, uint uiExitCode = 0);
-
-bool CreateSingleInstanceMutex();
-void ReleaseSingleInstanceMutex();
 
 void CleanDownloadCache();
 
