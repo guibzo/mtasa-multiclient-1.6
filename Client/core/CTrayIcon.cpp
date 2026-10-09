@@ -11,11 +11,22 @@
 
 #include "StdInc.h"
 #include <strsafe.h>
+#include <cstring>
 #include "resource.h"
 
 #define TRAY_DUMMY_WINDOW_NAME L"NotificationsDummy"
 #define TRAY_BALLOON_TITLE     L"Notification from MTA:SA server"
 #define TRAY_ICON_TOOLTIP_TEXT L"Multi Theft Auto: San Andreas"
+#define TRAY_CL2_SUFFIX        L" [CL2]"
+
+namespace
+{
+    bool IsSecondaryClientProcess()
+    {
+        const char* commandLine = GetCommandLineA();
+        return commandLine && std::strstr(commandLine, "-cl2") != nullptr;
+    }
+}
 #define TRAY_BALLOON_INTERVAL  30000L  // ms
 
 extern HINSTANCE g_hModule;
@@ -25,8 +36,9 @@ CTrayIcon::CTrayIcon() : m_bTrayIconExists{false}, m_pNID{new NOTIFYICONDATAW{0}
     m_pNID->cbSize = sizeof(NOTIFYICONDATAW);
     m_pNID->uID = 0;
 
-    StringCchCopyW(m_pNID->szTip, ARRAYSIZE(m_pNID->szTip), TRAY_ICON_TOOLTIP_TEXT);
-    StringCchCopyW(m_pNID->szInfoTitle, ARRAYSIZE(m_pNID->szInfoTitle), TRAY_BALLOON_TITLE);
+    const bool isSecondaryClient = IsSecondaryClientProcess();
+    StringCchCopyW(m_pNID->szTip, ARRAYSIZE(m_pNID->szTip), isSecondaryClient ? TRAY_ICON_TOOLTIP_TEXT TRAY_CL2_SUFFIX : TRAY_ICON_TOOLTIP_TEXT);
+    StringCchCopyW(m_pNID->szInfoTitle, ARRAYSIZE(m_pNID->szInfoTitle), isSecondaryClient ? TRAY_BALLOON_TITLE TRAY_CL2_SUFFIX : TRAY_BALLOON_TITLE);
 }
 
 CTrayIcon::~CTrayIcon()
@@ -72,7 +84,8 @@ bool CTrayIcon::CreateTrayIcon()
     // The handle to the core.dll is neccessary here,
     // because Windows will search for the ICON in the executable and not in the DLL
     // Note: Changing the size will not show a higher quality icon in the balloon
-    auto hIcon = LoadImage(g_hModule, MAKEINTRESOURCE(IDI_ICON1), IMAGE_ICON, LR_DEFAULTSIZE, LR_DEFAULTSIZE, LR_SHARED | LR_LOADTRANSPARENT);
+    const auto iconResource = IsSecondaryClientProcess() ? MAKEINTRESOURCE(IDI_ICON_CL2) : MAKEINTRESOURCE(IDI_ICON1);
+    auto       hIcon        = LoadImage(g_hModule, iconResource, IMAGE_ICON, LR_DEFAULTSIZE, LR_DEFAULTSIZE, LR_SHARED | LR_LOADTRANSPARENT);
 
     m_pNID->uFlags = NIF_ICON | NIF_TIP;
     m_pNID->hIcon = (hIcon != NULL) ? ((HICON)hIcon) : LoadIcon(NULL, IDI_APPLICATION);

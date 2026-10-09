@@ -11,6 +11,7 @@
 
 #include "StdInc.h"
 #include <filesystem>
+#include <cstring>
 #define DECLARE_PROFILER_SECTION_Core
 #include "profiler/SharedUtil.Profiler.h"
 #define UTF8_FILE_HOOKS_PERSONALITY_Core
@@ -20,6 +21,15 @@
 #define CORE_API extern "C" __declspec(dllexport)
 
 namespace fs = std::filesystem;
+
+namespace
+{
+    bool IsSecondaryClientProcess()
+    {
+        const char* commandLine = GetCommandLineA();
+        return commandLine && std::strstr(commandLine, "-cl2") != nullptr;
+    }
+}
 
 CCore*         g_pCore = NULL;
 CGraphics*     g_pGraphics = NULL;
@@ -90,8 +100,8 @@ CORE_API int InitializeCore()
     if (g_gtaDirectory.empty())
         return 4;
 
-    // Group our processes and windows under a single taskbar button
-    SetCurrentProcessExplicitAppUserModelID(L"Multi Theft Auto");
+    // Keep the primary and secondary clients on separate taskbar buttons
+    SetCurrentProcessExplicitAppUserModelID(IsSecondaryClientProcess() ? L"Multi Theft Auto.CL2" : L"Multi Theft Auto");
 
     WriteDebugEvent(SString("ModuleFileName: %s", *GetLaunchPathFilename()));
 

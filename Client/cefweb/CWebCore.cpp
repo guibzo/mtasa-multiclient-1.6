@@ -21,6 +21,20 @@
 #include <ranges>
 #include <filesystem>
 #include <cstdlib>
+#include <cstring>
+
+namespace
+{
+    bool IsSecondaryClientProcess()
+    {
+#ifdef _WIN32
+        const char* commandLine = GetCommandLineA();
+        return commandLine && std::strstr(commandLine, "-cl2") != nullptr;
+#else
+        return false;
+#endif
+    }
+}
 
 // #define CEF_ENABLE_SANDBOX
 #ifdef CEF_ENABLE_SANDBOX
@@ -195,8 +209,11 @@ bool CWebCore::Initialise(bool gpuEnabled)
         return false;
     }
 
-    // Ensure cache directory can be created
-    const SString strCachePath = PathJoin(strMTADir, "CEF", "cache");
+    // Use an instance-specific cache path so multiple clients do not contend for
+    // the same CEF cache lock files.
+    const DWORD  dwProcessId = GetCurrentProcessId();
+    const SString strCacheRoot = PathJoin(strMTADir, "CEF", "cache");
+    const SString strCachePath = PathJoin(strCacheRoot, SString("instance-%lu", dwProcessId));
     MakeSureDirExists(strCachePath);
 
     // Verify locales directory exists
@@ -263,7 +280,7 @@ bool CWebCore::Initialise(bool gpuEnabled)
     CefString(&settings.browser_subprocess_path).FromWString(FromUTF8(strLauncherPath));
     CefString(&settings.cache_path).FromWString(FromUTF8(strCachePath));
     CefString(&settings.locales_dir_path).FromWString(FromUTF8(strLocalesPath));
-    CefString(&settings.log_file).FromWString(FromUTF8(PathJoin(strMTADir, "CEF", "cefdebug.txt")));
+    CefString(&settings.log_file).FromWString(FromUTF8(PathJoin(strMTADir, "CEF", SString("cefdebug_%lu.txt", dwProcessId))));
 #ifdef MTA_DEBUG
     settings.log_severity = cef_log_severity_t::LOGSEVERITY_INFO;
 #else
@@ -885,7 +902,11 @@ bool CWebCore::MakeSureXMLNodesExist()
     // Check xml file
     if (!m_pXmlConfig)
     {
-        SString browserDataPath = CalcMTASAPath(MTA_BROWSERDATA_PATH);
+        SString browserDataFile = MTA_BROWSERDATA_PATH;
+        if (IsSecondaryClientProcess())
+            browserDataFile.Replace(".xml", "-cl2.xml");
+
+        SString browserDataPath = CalcMTASAPath(browserDataFile);
         bool    exists = FileExists(browserDataPath);
 
         m_pXmlConfig = g_pCore->GetXML()->CreateXML(browserDataPath);

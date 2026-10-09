@@ -327,8 +327,11 @@ int WINAPI WinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, _
 
     auto com_cleanup = make_scope_exit([]() noexcept { CoUninitialize(); });
 
-    // Set taskbar grouping
-    [[maybe_unused]] HRESULT hr = SetCurrentProcessExplicitAppUserModelID(L"Multi Theft Auto " MTA_STR(MTASA_VERSION_MAJOR) L"." MTA_STR(MTASA_VERSION_MINOR));
+    // Keep the primary and secondary clients on separate taskbar buttons
+    const bool isSecondaryClient = std::strstr(GetCommandLineA(), "-cl2") != nullptr;
+    [[maybe_unused]] HRESULT hr = SetCurrentProcessExplicitAppUserModelID(
+        isSecondaryClient ? L"Multi Theft Auto " MTA_STR(MTASA_VERSION_MAJOR) L"." MTA_STR(MTASA_VERSION_MINOR) L".CL2"
+                          : L"Multi Theft Auto " MTA_STR(MTASA_VERSION_MAJOR) L"." MTA_STR(MTASA_VERSION_MINOR));
 
     // Path discovery
     SString launch_path = GetLaunchPath();

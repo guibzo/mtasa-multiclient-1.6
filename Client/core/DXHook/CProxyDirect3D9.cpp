@@ -12,15 +12,34 @@
 #include "StdInc.h"
 #include "CProxyComHelpers.h"
 #include "ComPtrValidation.h"
+#include "../resource.h"
 #include <dwmapi.h>
 #include <mutex>
 #include <atomic>
 #include <resource.h>
+#include <cstring>
 
 extern HINSTANCE g_hModule;
 
 namespace
 {
+    bool IsSecondaryClientProcess()
+    {
+        const char* commandLine = GetCommandLineA();
+        return commandLine && std::strstr(commandLine, "-cl2") != nullptr;
+    }
+
+    SString GetMTAWindowTitle()
+    {
+        SString title = "MTA: San Andreas";
+#ifdef MTA_DEBUG
+        title += " [DEBUG]";
+#endif
+        if (IsSecondaryClientProcess())
+            title += " [CL2]";
+        return title;
+    }
+
     // Cached static Direct3D pointer for lockless fast-path access
     std::atomic<IDirect3D9*> g_cachedStaticDirect3D{nullptr};
     std::atomic<bool>        g_cachedDirect3DValid{false};
@@ -324,11 +343,7 @@ HRESULT CProxyDirect3D9::CreateDevice(UINT Adapter, D3DDEVTYPE DeviceType, HWND 
                             pPresentationParameters->PresentationInterval));
 
 // Change the window title to MTA: San Andreas
-#ifdef MTA_DEBUG
-    SetWindowTextW(hFocusWindow, MbUTF8ToUTF16("MTA: San Andreas [DEBUG]").c_str());
-#else
-    SetWindowTextW(hFocusWindow, MbUTF8ToUTF16("MTA: San Andreas").c_str());
-#endif
+    SetWindowTextW(hFocusWindow, MbUTF8ToUTF16(GetMTAWindowTitle().c_str()).c_str());
 
     // Set dark titlebar if needed
     int           themeStatus = 0;
@@ -348,7 +363,8 @@ HRESULT CProxyDirect3D9::CreateDevice(UINT Adapter, D3DDEVTYPE DeviceType, HWND 
     DwmSetWindowAttribute(hFocusWindow, DWMWA_USE_IMMERSIVE_DARK_MODE, &darkTitleBar, sizeof(darkTitleBar));
 
     // Update icon
-    if (HICON icon = LoadIcon(g_hModule, MAKEINTRESOURCE(IDI_ICON1)))
+    const auto iconResource = IsSecondaryClientProcess() ? MAKEINTRESOURCE(IDI_ICON_CL2) : MAKEINTRESOURCE(IDI_ICON1);
+    if (HICON icon = LoadIcon(g_hModule, iconResource))
     {
         const auto paramIcon = reinterpret_cast<LPARAM>(icon);
         for (const WPARAM size : {ICON_SMALL, ICON_BIG})
@@ -1352,11 +1368,7 @@ HRESULT CCore::OnPostCreateDevice(HRESULT hResult, IDirect3D9* pDirect3D, UINT A
         AddCapsReport(Adapter, pDirect3D, *ppReturnedDeviceInterface, true);
 
 // Change the window title to MTA: San Andreas
-#ifdef MTA_DEBUG
-    SetWindowTextW(hFocusWindow, MbUTF8ToUTF16("MTA: San Andreas [DEBUG]").c_str());
-#else
-    SetWindowTextW(hFocusWindow, MbUTF8ToUTF16("MTA: San Andreas").c_str());
-#endif
+    SetWindowTextW(hFocusWindow, MbUTF8ToUTF16(GetMTAWindowTitle().c_str()).c_str());
 
     // Log graphic card name
     D3DADAPTER_IDENTIFIER9 AdapterIdent{};
